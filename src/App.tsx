@@ -32,7 +32,16 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors relative">
+        {/* Badge - Always visible */}
+        <div className="fixed top-4 right-4 z-50">
+          <img 
+            src="/white_circle_360x360.png" 
+            alt="Powered by Bolt" 
+            className="w-16 h-16 opacity-80 hover:opacity-100 transition-opacity"
+          />
+        </div>
+        
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-400">Loading...</p>
@@ -43,6 +52,15 @@ function App() {
 
   return (
     <>
+      {/* Badge - Always visible across all views */}
+      <div className="fixed top-4 right-4 z-50">
+        <img 
+          src="/white_circle_360x360.png" 
+          alt="Powered by Bolt" 
+          className="w-16 h-16 opacity-80 hover:opacity-100 transition-opacity"
+        />
+      </div>
+
       <Toaster
         position="top-right"
         toastOptions={{

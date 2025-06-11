@@ -162,16 +162,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors relative">
-        {/* Badge */}
-        <div className="absolute top-4 right-4 z-10">
-          <img 
-            src="/white_circle_360x360.png" 
-            alt="Powered by Bolt" 
-            className="w-16 h-16 opacity-80 hover:opacity-100 transition-opacity"
-          />
-        </div>
-        
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
