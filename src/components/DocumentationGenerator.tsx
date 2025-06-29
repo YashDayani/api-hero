@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ApiEndpoint } from '../hooks/useApis';
-import { Book, Code, Download, ExternalLink, Copy, Check, Sparkles, FileText, Globe, Settings, RefreshCw } from 'lucide-react';
+import { Book, Code, Download, ExternalLink, Copy, Check, Sparkles, FileText, Globe, Settings, RefreshCw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface DocumentationGeneratorProps {
