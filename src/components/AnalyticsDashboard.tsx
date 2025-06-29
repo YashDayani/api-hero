@@ -259,9 +259,11 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           </div>
           
           <div className="mt-4 text-sm text-gray-600 dark:text-gray-400 text-center">
-            Peak hour: {stats.hourlyStats.reduce((max, hour) => 
-              hour.requests > max.requests ? hour : max
-            ).hour}:00
+            Peak hour: {stats.hourlyStats.length > 0 ? 
+              stats.hourlyStats.reduce((max, hour) => 
+                hour.requests > max.requests ? hour : max, 
+                { hour: 0, requests: -1 }
+              ).hour : 0}:00
           </div>
         </div>
       </div>
