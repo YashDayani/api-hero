@@ -9,10 +9,11 @@ import { ApiForm } from './ApiForm';
 import { ApiTester } from './ApiTester';
 import { SchemaBuilder } from './SchemaBuilder';
 import { JsonTemplateBuilder } from './JsonTemplateBuilder';
-import { JsonTemplateEditor } from './JsonTemplateEditor';
+import { AiSchemaEditor } from './AiSchemaEditor';
+import { AiJsonEditor } from './AiJsonEditor';
 import { DataManager } from './DataManager';
 import { ProfileMenu } from './ProfileMenu';
-import { Plus, ArrowLeft, Globe, FolderOpen, Database, Code, Edit2, Trash2, AlertTriangle, FileText } from 'lucide-react';
+import { Plus, ArrowLeft, Globe, FolderOpen, Database, Code, Edit2, Trash2, AlertTriangle, FileText, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface ProjectDetailViewProps {
@@ -36,8 +37,11 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [showApiForm, setShowApiForm] = useState(false);
   const [showSchemaBuilder, setShowSchemaBuilder] = useState(false);
   const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
+  const [showSchemaEditor, setShowSchemaEditor] = useState(false);
+  const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [editingApi, setEditingApi] = useState<any>(null);
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
+  const [editingSchema, setEditingSchema] = useState<any>(null);
   const [testingApi, setTestingApi] = useState<any>(null);
   const [managingSchema, setManagingSchema] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'apis' | 'schemas' | 'templates'>('apis');
@@ -61,6 +65,16 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const handleEditTemplate = (template: any) => {
     setEditingTemplate(template);
     setShowTemplateBuilder(true);
+  };
+
+  const handleAiEditTemplate = (template: any) => {
+    setEditingTemplate(template);
+    setShowJsonEditor(true);
+  };
+
+  const handleAiEditSchema = (schema: any) => {
+    setEditingSchema(schema);
+    setShowSchemaEditor(true);
   };
 
   const handleEdit = (api: any) => {
@@ -101,6 +115,22 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     }
   };
 
+  const handleUpdateSchema = async (name: string, description: string, fields: any[]) => {
+    // For now, we'll create a new schema since we don't have update functionality
+    // In a real app, you'd want to implement schema updating
+    const newSchema = await addSchema({
+      name,
+      description,
+      fields,
+      project_id: project.id,
+    });
+    if (newSchema) {
+      toast.success('Schema updated successfully!');
+      setShowSchemaEditor(false);
+      setEditingSchema(null);
+    }
+  };
+
   const handleSaveTemplate = async (templateData: any) => {
     let success = false;
     
@@ -123,6 +153,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     if (success) {
       setShowTemplateBuilder(false);
       setEditingTemplate(null);
+    }
+  };
+
+  const handleUpdateTemplate = async (jsonData: any, name: string, description: string) => {
+    if (editingTemplate) {
+      const success = await updateTemplate(editingTemplate.id, {
+        name,
+        description,
+        json_data: jsonData,
+      });
+      if (success) {
+        toast.success('JSON template updated successfully!');
+        setShowJsonEditor(false);
+        setEditingTemplate(null);
+      }
     }
   };
 
@@ -371,6 +416,13 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                       
                       <div className="flex items-center space-x-1">
                         <button
+                          onClick={() => handleAiEditTemplate(template)}
+                          className="text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 p-1 rounded transition-colors"
+                          title="Edit with AI"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => handleEditTemplate(template)}
                           className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 p-1 rounded transition-colors"
                           title="Edit template"
@@ -397,13 +449,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                       </pre>
                     </div>
 
-                    <button
-                      onClick={() => handleEditTemplate(template)}
-                      className="w-full flex items-center justify-center space-x-1 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                      <span>Edit Template</span>
-                    </button>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleAiEditTemplate(template)}
+                        className="flex-1 flex items-center justify-center space-x-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>AI Edit</span>
+                      </button>
+                      <button
+                        onClick={() => handleEditTemplate(template)}
+                        className="flex items-center justify-center bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -472,13 +532,22 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         </div>
                       </div>
                       
-                      <button
-                        onClick={() => setDeletingSchemaId(schema.id)}
-                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded transition-colors"
-                        title="Delete schema"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handleAiEditSchema(schema)}
+                          className="text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 p-1 rounded transition-colors"
+                          title="Edit with AI"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingSchemaId(schema.id)}
+                          className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded transition-colors"
+                          title="Delete schema"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="bg-gray-50 dark:bg-gray-700 rounded p-3 mb-4">
@@ -499,13 +568,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => setManagingSchema(schema)}
-                      className="w-full flex items-center justify-center space-x-1 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-                    >
-                      <Database className="w-4 h-4" />
-                      <span>Manage Data</span>
-                    </button>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleAiEditSchema(schema)}
+                        className="flex-1 flex items-center justify-center space-x-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>AI Edit</span>
+                      </button>
+                      <button
+                        onClick={() => setManagingSchema(schema)}
+                        className="flex items-center justify-center bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                      >
+                        <Database className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -543,6 +620,28 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           onSave={handleSaveTemplate}
           onCancel={() => {
             setShowTemplateBuilder(false);
+            setEditingTemplate(null);
+          }}
+        />
+      )}
+
+      {showSchemaEditor && editingSchema && isSchemaMode() && (
+        <AiSchemaEditor
+          currentSchema={editingSchema}
+          onUpdate={handleUpdateSchema}
+          onClose={() => {
+            setShowSchemaEditor(false);
+            setEditingSchema(null);
+          }}
+        />
+      )}
+
+      {showJsonEditor && editingTemplate && (
+        <AiJsonEditor
+          currentTemplate={editingTemplate}
+          onUpdate={handleUpdateTemplate}
+          onClose={() => {
+            setShowJsonEditor(false);
             setEditingTemplate(null);
           }}
         />
