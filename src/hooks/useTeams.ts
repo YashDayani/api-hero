@@ -107,21 +107,32 @@ export const useTeams = () => {
       setLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
-        .from('teams')
+      // First get teams where user is a member
+      const { data: memberTeams, error: memberError } = await supabase
+        .from('team_members')
         .select(`
-          *,
-          team_members!inner(role, status)
+          team_id,
+          teams(*)
         `)
-        .eq('team_members.user_id', user.id)
-        .eq('team_members.status', 'active')
-        .order('created_at', { ascending: false });
+        .eq('user_id', user.id)
+        .eq('status', 'active');
 
-      if (fetchError) {
-        throw fetchError;
+      if (memberError) {
+        throw memberError;
       }
 
-      setTeams(data || []);
+      // Extract unique teams
+      const uniqueTeams = memberTeams?.reduce((acc: Team[], member: any) => {
+        if (member.teams && !acc.find(t => t.id === member.teams.id)) {
+          acc.push(member.teams);
+        }
+        return acc;
+      }, []) || [];
+
+      // Sort by creation date
+      uniqueTeams.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setTeams(uniqueTeams);
     } catch (err: any) {
       console.error('Error fetching teams:', err);
       setError(err.message);
@@ -147,7 +158,7 @@ export const useTeams = () => {
       if (error) throw error;
 
       // Add creator as owner
-      await supabase
+      const { error: memberError } = await supabase
         .from('team_members')
         .insert([{
           team_id: data.id,
@@ -155,6 +166,11 @@ export const useTeams = () => {
           role: 'owner',
           status: 'active'
         }]);
+
+      if (memberError) {
+        console.error('Error adding team member:', memberError);
+        // Don't throw here as team was created successfully
+      }
 
       await fetchTeams();
       return data;
@@ -211,7 +227,7 @@ export const useTeams = () => {
         .from('team_members')
         .select(`
           *,
-          user:user_id(email, raw_user_meta_data)
+          users!inner(email, raw_user_meta_data)
         `)
         .eq('team_id', teamId)
         .order('created_at', { ascending: true });
@@ -220,9 +236,9 @@ export const useTeams = () => {
 
       return (data || []).map(member => ({
         ...member,
-        user: member.user ? {
-          email: member.user.email,
-          full_name: member.user.raw_user_meta_data?.full_name
+        user: member.users ? {
+          email: member.users.email,
+          full_name: member.users.raw_user_meta_data?.full_name
         } : undefined
       }));
     } catch (err: any) {
