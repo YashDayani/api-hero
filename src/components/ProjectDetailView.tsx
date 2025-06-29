@@ -12,8 +12,13 @@ import { JsonTemplateBuilder } from './JsonTemplateBuilder';
 import { AiSchemaEditor } from './AiSchemaEditor';
 import { AiJsonEditor } from './AiJsonEditor';
 import { DataManager } from './DataManager';
+import { AnalyticsDashboard } from './AnalyticsDashboard';
+import { DocumentationGenerator } from './DocumentationGenerator';
+import { TeamManagement } from './TeamManagement';
+import { ActivityFeed } from './ActivityFeed';
+import { CommentsSection } from './CommentsSection';
 import { ProfileMenu } from './ProfileMenu';
-import { Plus, ArrowLeft, Globe, FolderOpen, Database, Code, Edit2, Trash2, AlertTriangle, FileText, Sparkles } from 'lucide-react';
+import { Plus, ArrowLeft, Globe, FolderOpen, Database, Code, Edit2, Trash2, AlertTriangle, FileText, Sparkles, BarChart3, Book, Users, MessageCircle, Activity } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface ProjectDetailViewProps {
@@ -39,14 +44,18 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
   const [showSchemaEditor, setShowSchemaEditor] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showDocumentation, setShowDocumentation] = useState(false);
+  const [showTeamManagement, setShowTeamManagement] = useState(false);
   const [editingApi, setEditingApi] = useState<any>(null);
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
   const [editingSchema, setEditingSchema] = useState<any>(null);
   const [testingApi, setTestingApi] = useState<any>(null);
   const [managingSchema, setManagingSchema] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'apis' | 'schemas' | 'templates'>('apis');
+  const [activeTab, setActiveTab] = useState<'apis' | 'schemas' | 'templates' | 'analytics' | 'activity'>('apis');
   const [deletingSchemaId, setDeletingSchemaId] = useState<string | null>(null);
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+  const [showComments, setShowComments] = useState(false);
 
   const handleCreateNewApi = () => {
     setEditingApi(null);
@@ -231,7 +240,37 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </div>
             </div>
 
-            <ProfileMenu />
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setShowComments(true)}
+                className="flex items-center space-x-1 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                <MessageCircle className="w-5 h-5" />
+                <span className="hidden sm:inline">Comments</span>
+              </button>
+              <button
+                onClick={() => setShowAnalytics(true)}
+                className="flex items-center space-x-1 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                <BarChart3 className="w-5 h-5" />
+                <span className="hidden sm:inline">Analytics</span>
+              </button>
+              <button
+                onClick={() => setShowDocumentation(true)}
+                className="flex items-center space-x-1 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                <Book className="w-5 h-5" />
+                <span className="hidden sm:inline">Docs</span>
+              </button>
+              <button
+                onClick={() => setShowTeamManagement(true)}
+                className="flex items-center space-x-1 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                <Users className="w-5 h-5" />
+                <span className="hidden sm:inline">Teams</span>
+              </button>
+              <ProfileMenu />
+            </div>
           </div>
         </div>
       </header>
@@ -291,6 +330,32 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 </div>
               </button>
             )}
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'analytics'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <BarChart3 className="w-4 h-4" />
+                <span>Analytics</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('activity')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'activity'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Activity className="w-4 h-4" />
+                <span>Activity</span>
+              </div>
+            </button>
           </div>
         </div>
       </div>
@@ -469,7 +534,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </div>
             )}
           </>
-        ) : (
+        ) : activeTab === 'schemas' && isSchemaMode() ? (
           <>
             {/* Schemas Tab - Only shown if schema mode is enabled */}
             <div className="flex items-center justify-between mb-6">
@@ -588,7 +653,11 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </div>
             )}
           </>
-        )}
+        ) : activeTab === 'analytics' ? (
+          <AnalyticsDashboard projectId={project.id} />
+        ) : activeTab === 'activity' ? (
+          <ActivityFeed projectId={project.id} />
+        ) : null}
       </main>
 
       {/* Modals */}
@@ -659,6 +728,64 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           api={testingApi}
           onClose={() => setTestingApi(null)}
         />
+      )}
+
+      {showAnalytics && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-7xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Dashboard</h2>
+                <button
+                  onClick={() => setShowAnalytics(false)}
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <AnalyticsDashboard projectId={project.id} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDocumentation && (
+        <DocumentationGenerator
+          apis={apis}
+          projectName={project.name}
+          onClose={() => setShowDocumentation(false)}
+        />
+      )}
+
+      {showTeamManagement && (
+        <TeamManagement onClose={() => setShowTeamManagement(false)} />
+      )}
+
+      {showComments && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Project Comments</h2>
+                <button
+                  onClick={() => setShowComments(false)}
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <CommentsSection
+                entityType="project"
+                entityId={project.id}
+                projectId={project.id}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Template Confirmation */}

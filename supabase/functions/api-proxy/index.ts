@@ -190,6 +190,67 @@ function addToCache(key: string, data: any, metadata: any) {
   })
 }
 
+// Analytics logging function
+async function logAnalytics(supabaseClient: any, endpoint: any, request: Request, responseStatus: number, responseTime: number, responseSize: number = 0, error?: string) {
+  try {
+    const url = new URL(request.url)
+    const userAgent = request.headers.get('user-agent') || ''
+    const clientIP = request.headers.get('x-forwarded-for') || 
+                    request.headers.get('x-real-ip') || 
+                    request.headers.get('cf-connecting-ip') || 
+                    'unknown'
+
+    // Basic geographic data (you could enhance this with a GeoIP service)
+    let geoData = {
+      country_code: null,
+      region: null,
+      city: null
+    }
+
+    // Try to get basic geo info from Cloudflare headers if available
+    const cfCountry = request.headers.get('cf-ipcountry')
+    if (cfCountry && cfCountry !== 'XX') {
+      geoData.country_code = cfCountry
+    }
+
+    const analyticsData = {
+      api_endpoint_id: endpoint.id,
+      user_id: endpoint.user_id,
+      project_id: endpoint.project_id,
+      request_method: 'GET',
+      request_path: endpoint.route,
+      request_ip: clientIP,
+      request_user_agent: userAgent,
+      request_headers: {
+        'user-agent': userAgent,
+        'referer': request.headers.get('referer') || null
+      },
+      response_status: responseStatus,
+      response_time_ms: responseTime,
+      response_size_bytes: responseSize,
+      country_code: geoData.country_code,
+      region: geoData.region,
+      city: geoData.city,
+      error_message: error || null,
+      error_type: error ? (responseStatus >= 500 ? 'server_error' : 'client_error') : null
+    }
+
+    // Insert analytics data (fire and forget)
+    supabaseClient
+      .from('api_analytics')
+      .insert([analyticsData])
+      .then(() => {
+        console.log('Analytics logged successfully')
+      })
+      .catch((err: any) => {
+        console.error('Failed to log analytics:', err.message)
+      })
+
+  } catch (error) {
+    console.error('Analytics logging error:', error)
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests immediately
   if (req.method === 'OPTIONS') {
@@ -294,6 +355,8 @@ serve(async (req) => {
         schema_id,
         template_id,
         updated_at,
+        user_id,
+        project_id,
         json_templates!template_id(id, json_data, updated_at)
       `)
       .eq('route', route)
@@ -323,6 +386,8 @@ serve(async (req) => {
             schema_id,
             template_id,
             updated_at,
+            user_id,
+            project_id,
             json_templates!template_id(id, json_data, updated_at)
           `)
           .eq('route', route)
@@ -336,20 +401,24 @@ serve(async (req) => {
       }
     }
 
+    const responseTime = Date.now() - startTime
+
     if (!endpoints || endpoints.length === 0) {
+      const errorResponse = {
+        error: 'API endpoint not found',
+        route: route,
+        message: `No API endpoint configured for route: ${route}`
+      }
+      
       return new Response(
-        JSON.stringify({ 
-          error: 'API endpoint not found',
-          route: route,
-          message: `No API endpoint configured for route: ${route}`
-        }),
+        JSON.stringify(errorResponse),
         {
           status: 404,
           headers: { 
             ...corsHeaders,
             'Content-Type': 'application/json',
             'X-Cache': 'MISS',
-            'X-Response-Time': `${Date.now() - startTime}ms`
+            'X-Response-Time': `${responseTime}ms`
           },
         }
       )
@@ -360,38 +429,48 @@ serve(async (req) => {
     // Access control checks
     if (!endpoint.is_public) {
       if (!apiKeyHeader) {
+        const errorResponse = {
+          error: 'Missing API key',
+          message: 'This endpoint requires an API key. Include x-api-key header in your request.',
+          route: route
+        }
+
+        // Log analytics for unauthorized access
+        await logAnalytics(supabaseClient, endpoint, req, 401, responseTime, JSON.stringify(errorResponse).length, 'Missing API key')
+        
         return new Response(
-          JSON.stringify({ 
-            error: 'Missing API key',
-            message: 'This endpoint requires an API key. Include x-api-key header in your request.',
-            route: route
-          }),
+          JSON.stringify(errorResponse),
           {
             status: 401,
             headers: { 
               ...corsHeaders,
               'Content-Type': 'application/json',
               'X-Cache': 'MISS',
-              'X-Response-Time': `${Date.now() - startTime}ms`
+              'X-Response-Time': `${responseTime}ms`
             },
           }
         )
       }
 
       if (endpoint.api_key !== apiKeyHeader) {
+        const errorResponse = {
+          error: 'Invalid API key',
+          message: 'The provided API key is not valid for this endpoint.',
+          route: route
+        }
+
+        // Log analytics for invalid API key
+        await logAnalytics(supabaseClient, endpoint, req, 401, responseTime, JSON.stringify(errorResponse).length, 'Invalid API key')
+        
         return new Response(
-          JSON.stringify({ 
-            error: 'Invalid API key',
-            message: 'The provided API key is not valid for this endpoint.',
-            route: route
-          }),
+          JSON.stringify(errorResponse),
           {
             status: 401,
             headers: { 
               ...corsHeaders,
               'Content-Type': 'application/json',
               'X-Cache': 'MISS',
-              'X-Response-Time': `${Date.now() - startTime}ms`
+              'X-Response-Time': `${responseTime}ms`
             },
           }
         )
@@ -419,18 +498,23 @@ serve(async (req) => {
 
       if (schemaError) {
         console.error('Schema data fetch error:', schemaError)
+        const errorResponse = {
+          error: 'Schema data fetch error',
+          message: schemaError.message
+        }
+
+        // Log analytics for schema error
+        await logAnalytics(supabaseClient, endpoint, req, 500, responseTime, JSON.stringify(errorResponse).length, 'Schema data fetch error')
+        
         return new Response(
-          JSON.stringify({ 
-            error: 'Schema data fetch error',
-            message: schemaError.message
-          }),
+          JSON.stringify(errorResponse),
           {
             status: 500,
             headers: { 
               ...corsHeaders,
               'Content-Type': 'application/json',
               'X-Cache': 'MISS',
-              'X-Response-Time': `${Date.now() - startTime}ms`
+              'X-Response-Time': `${responseTime}ms`
             },
           }
         )
@@ -454,11 +538,16 @@ serve(async (req) => {
       apiName
     }, cacheMetadata)
 
-    const responseTime = Date.now() - startTime
-    console.log(`API Proxy: Fresh data served for route: ${route} in ${responseTime}ms`)
+    const finalResponseTime = Date.now() - startTime
+    const responseString = JSON.stringify(responseData)
+    
+    // Log successful analytics
+    await logAnalytics(supabaseClient, endpoint, req, 200, finalResponseTime, responseString.length)
+    
+    console.log(`API Proxy: Fresh data served for route: ${route} in ${finalResponseTime}ms`)
 
     return new Response(
-      JSON.stringify(responseData),
+      responseString,
       {
         status: 200,
         headers: { 
@@ -468,7 +557,7 @@ serve(async (req) => {
           'X-API-Name': apiName,
           'X-Cache': 'MISS',
           'X-Cache-Fresh': 'true',
-          'X-Response-Time': `${responseTime}ms`
+          'X-Response-Time': `${finalResponseTime}ms`
         },
       }
     )
@@ -476,11 +565,14 @@ serve(async (req) => {
   } catch (error) {
     const responseTime = Date.now() - startTime
     console.error('API Proxy Error:', error)
+    
+    const errorResponse = {
+      error: 'Internal server error',
+      message: error.message
+    }
+    
     return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        message: error.message
-      }),
+      JSON.stringify(errorResponse),
       {
         status: 500,
         headers: { 
