@@ -26,7 +26,11 @@ export const AiJsonGenerator: React.FC<AiJsonGeneratorProps> = ({
     "Blog post with title, content, author, tags, and metadata",
     "Restaurant menu item with name, price, ingredients, and nutritional info",
     "Social media post with content, author, likes, comments, and timestamp",
-    "Event details with title, date, location, description, and attendees"
+    "Event details with title, date, location, description, and attendees",
+    "Task management item with title, description, priority, and due date",
+    "Movie information with title, director, cast, genre, and ratings",
+    "Book details with title, author, ISBN, genre, and publication info",
+    "Weather forecast with temperature, conditions, humidity, and location"
   ];
 
   const generateWithGemini = async () => {
@@ -40,25 +44,124 @@ export const AiJsonGenerator: React.FC<AiJsonGeneratorProps> = ({
     setGeneratedJson('');
 
     try {
-      // In a real implementation, you would call the Gemini API
-      // For now, we'll simulate the API call with a timeout and generate realistic JSON
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=AIzaSyAg7W0RkpIoOZCHSMW0uc8qnxQa3BnpU7E`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are a JSON template generator. Create a comprehensive, realistic JSON template based on the user's description. 
 
-      // Simulate Gemini API response based on the prompt
-      const simulatedResponse = generateSimulatedJson(prompt);
+User Request: "${prompt}"
+
+Requirements:
+1. Generate a complete, realistic JSON structure that matches the description
+2. Include meaningful sample data (not just placeholders)
+3. Use realistic field names and values
+4. Include nested objects and arrays where appropriate
+5. Add relevant metadata fields (id, timestamps, etc.)
+6. Make it production-ready and comprehensive
+7. Ensure all string values are realistic (use real-looking names, emails, URLs, etc.)
+8. Include 3-8 main fields with appropriate sub-fields
+9. Use proper data types (strings, numbers, booleans, arrays, objects)
+
+Also provide:
+- A suitable template name (2-4 words, descriptive)
+- A brief description (1-2 sentences explaining what this template represents)
+
+Format your response as a JSON object with this exact structure:
+{
+  "templateName": "Your Template Name",
+  "templateDescription": "Brief description of what this template represents",
+  "jsonTemplate": { your actual JSON template here }
+}
+
+Make sure the jsonTemplate contains realistic, comprehensive data that would be useful in a real application.`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 2048,
+          },
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
       
-      setGeneratedJson(JSON.stringify(simulatedResponse.json, null, 2));
-      setTemplateName(simulatedResponse.name);
-      setTemplateDescription(simulatedResponse.description);
-    } catch (err) {
-      setError('Failed to generate JSON template. Please try again.');
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        throw new Error('Invalid response from Gemini API');
+      }
+
+      const generatedText = data.candidates[0].content.parts[0].text;
+      
+      // Extract JSON from the response (handle potential markdown formatting)
+      let jsonMatch = generatedText.match(/```json\n([\s\S]*?)\n```/) || 
+                     generatedText.match(/```\n([\s\S]*?)\n```/) ||
+                     [null, generatedText];
+      
+      let responseJson;
+      try {
+        responseJson = JSON.parse(jsonMatch[1] || generatedText);
+      } catch (parseError) {
+        // If parsing fails, try to extract just the JSON part
+        const jsonStart = generatedText.indexOf('{');
+        const jsonEnd = generatedText.lastIndexOf('}') + 1;
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          responseJson = JSON.parse(generatedText.substring(jsonStart, jsonEnd));
+        } else {
+          throw new Error('Could not parse JSON from Gemini response');
+        }
+      }
+
+      if (!responseJson.templateName || !responseJson.templateDescription || !responseJson.jsonTemplate) {
+        throw new Error('Invalid response format from Gemini API');
+      }
+
+      setGeneratedJson(JSON.stringify(responseJson.jsonTemplate, null, 2));
+      setTemplateName(responseJson.templateName);
+      setTemplateDescription(responseJson.templateDescription);
+
+    } catch (err: any) {
       console.error('Gemini API error:', err);
+      setError(`Failed to generate JSON template: ${err.message}`);
+      
+      // Fallback to a basic template if API fails
+      const fallbackTemplate = generateFallbackTemplate(prompt);
+      setGeneratedJson(JSON.stringify(fallbackTemplate.json, null, 2));
+      setTemplateName(fallbackTemplate.name);
+      setTemplateDescription(fallbackTemplate.description);
     } finally {
       setLoading(false);
     }
   };
 
-  const generateSimulatedJson = (prompt: string) => {
+  const generateFallbackTemplate = (prompt: string) => {
     const lowerPrompt = prompt.toLowerCase();
     
     if (lowerPrompt.includes('user') || lowerPrompt.includes('profile')) {
@@ -95,203 +198,7 @@ export const AiJsonGenerator: React.FC<AiJsonGeneratorProps> = ({
       };
     }
     
-    if (lowerPrompt.includes('product') || lowerPrompt.includes('ecommerce') || lowerPrompt.includes('shop')) {
-      return {
-        name: 'E-commerce Product Template',
-        description: 'Complete product information for online store',
-        json: {
-          id: 101,
-          title: "Premium Wireless Headphones",
-          description: "High-quality wireless headphones with noise cancellation and premium sound quality",
-          price: 299.99,
-          originalPrice: 399.99,
-          discount: 25,
-          currency: "USD",
-          category: "Electronics",
-          subcategory: "Audio",
-          brand: "AudioTech",
-          sku: "AT-WH-001",
-          images: [
-            "https://images.pexels.com/photos/3394650/pexels-photo-3394650.jpeg",
-            "https://images.pexels.com/photos/3394651/pexels-photo-3394651.jpeg"
-          ],
-          features: [
-            "Active Noise Cancellation",
-            "30-hour battery life",
-            "Bluetooth 5.0",
-            "Quick charge technology"
-          ],
-          specifications: {
-            weight: "250g",
-            dimensions: "18 x 15 x 7 cm",
-            batteryLife: "30 hours",
-            chargingTime: "2 hours",
-            connectivity: "Bluetooth 5.0, USB-C"
-          },
-          rating: 4.8,
-          reviewCount: 1247,
-          inStock: true,
-          stockQuantity: 45,
-          shipping: {
-            free: true,
-            estimatedDays: "2-3"
-          },
-          tags: ["wireless", "headphones", "noise-cancelling", "premium"]
-        }
-      };
-    }
-    
-    if (lowerPrompt.includes('blog') || lowerPrompt.includes('post') || lowerPrompt.includes('article')) {
-      return {
-        name: 'Blog Post Template',
-        description: 'Complete blog post with metadata and content structure',
-        json: {
-          id: 42,
-          title: "The Future of Web Development: Trends to Watch in 2024",
-          slug: "future-web-development-trends-2024",
-          excerpt: "Explore the latest trends shaping the future of web development, from AI integration to new frameworks.",
-          content: "Web development continues to evolve at a rapid pace. In this comprehensive guide, we'll explore the key trends that are shaping the industry...",
-          author: {
-            id: 5,
-            name: "Sarah Johnson",
-            avatar: "https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg",
-            bio: "Senior Frontend Developer and Tech Writer",
-            social: {
-              twitter: "@sarahdev",
-              linkedin: "linkedin.com/in/sarahjohnson"
-            }
-          },
-          publishedAt: "2024-01-15T09:00:00Z",
-          updatedAt: "2024-01-15T09:00:00Z",
-          status: "published",
-          featured: true,
-          featuredImage: "https://images.pexels.com/photos/11035380/pexels-photo-11035380.jpeg",
-          tags: ["web development", "trends", "technology", "frontend"],
-          category: "Technology",
-          readingTime: 8,
-          views: 2847,
-          likes: 156,
-          comments: 23,
-          seo: {
-            metaTitle: "Future of Web Development: 2024 Trends | TechBlog",
-            metaDescription: "Discover the latest web development trends for 2024. Learn about AI integration, new frameworks, and emerging technologies.",
-            keywords: ["web development", "2024 trends", "frontend", "technology"]
-          }
-        }
-      };
-    }
-    
-    if (lowerPrompt.includes('restaurant') || lowerPrompt.includes('menu') || lowerPrompt.includes('food')) {
-      return {
-        name: 'Restaurant Menu Item Template',
-        description: 'Complete menu item with nutritional information and details',
-        json: {
-          id: 15,
-          name: "Grilled Salmon with Quinoa",
-          description: "Fresh Atlantic salmon grilled to perfection, served with organic quinoa and seasonal vegetables",
-          price: 28.50,
-          currency: "USD",
-          category: "Main Course",
-          subcategory: "Seafood",
-          image: "https://images.pexels.com/photos/1199957/pexels-photo-1199957.jpeg",
-          ingredients: [
-            "Fresh Atlantic Salmon (6oz)",
-            "Organic Quinoa",
-            "Seasonal Vegetables",
-            "Lemon Herb Sauce",
-            "Fresh Herbs"
-          ],
-          allergens: ["Fish"],
-          dietary: ["Gluten-Free", "High-Protein", "Omega-3 Rich"],
-          nutrition: {
-            calories: 485,
-            protein: "42g",
-            carbs: "28g",
-            fat: "22g",
-            fiber: "4g",
-            sodium: "320mg"
-          },
-          preparationTime: 18,
-          spiceLevel: "Mild",
-          chef: "Chef Maria Rodriguez",
-          available: true,
-          popular: true,
-          rating: 4.9,
-          reviewCount: 89,
-          tags: ["healthy", "seafood", "gluten-free", "signature"]
-        }
-      };
-    }
-    
-    if (lowerPrompt.includes('event') || lowerPrompt.includes('meeting') || lowerPrompt.includes('conference')) {
-      return {
-        name: 'Event Details Template',
-        description: 'Complete event information with attendees and logistics',
-        json: {
-          id: 78,
-          title: "Tech Innovation Summit 2024",
-          description: "Join industry leaders for a day of innovation, networking, and insights into the future of technology",
-          type: "Conference",
-          category: "Technology",
-          startDate: "2024-03-15T09:00:00Z",
-          endDate: "2024-03-15T18:00:00Z",
-          timezone: "PST",
-          location: {
-            venue: "San Francisco Convention Center",
-            address: "747 Howard St, San Francisco, CA 94103",
-            city: "San Francisco",
-            state: "California",
-            country: "USA",
-            coordinates: {
-              lat: 37.7849,
-              lng: -122.4094
-            }
-          },
-          organizer: {
-            name: "TechEvents Inc.",
-            email: "info@techevents.com",
-            phone: "+1-555-0123",
-            website: "https://techevents.com"
-          },
-          speakers: [
-            {
-              name: "Dr. Emily Chen",
-              title: "AI Research Director",
-              company: "FutureTech Labs",
-              bio: "Leading expert in artificial intelligence and machine learning",
-              image: "https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg"
-            }
-          ],
-          agenda: [
-            {
-              time: "09:00",
-              title: "Registration & Welcome Coffee",
-              duration: 60
-            },
-            {
-              time: "10:00",
-              title: "Keynote: The Future of AI",
-              speaker: "Dr. Emily Chen",
-              duration: 45
-            }
-          ],
-          pricing: {
-            earlyBird: 299,
-            regular: 399,
-            student: 99,
-            currency: "USD"
-          },
-          capacity: 500,
-          registered: 387,
-          available: 113,
-          tags: ["technology", "AI", "innovation", "networking"],
-          featured: true,
-          status: "open"
-        }
-      };
-    }
-    
-    // Default generic template
+    // Default fallback
     return {
       name: 'Custom Data Template',
       description: 'AI-generated template based on your description',
