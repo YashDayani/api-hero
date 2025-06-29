@@ -107,32 +107,45 @@ export const useTeams = () => {
       setLoading(true);
       setError(null);
 
-      // First get teams where user is a member
-      const { data: memberTeams, error: memberError } = await supabase
+      // Get all teams where user is the owner (direct query to avoid recursion)
+      const { data: ownedTeams, error: ownedError } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('owner_id', user.id);
+
+      if (ownedError) throw ownedError;
+
+      // Get all team IDs where user is a member (direct query to avoid recursion)
+      const { data: memberships, error: membershipError } = await supabase
         .from('team_members')
-        .select(`
-          team_id,
-          teams(*)
-        `)
+        .select('team_id')
         .eq('user_id', user.id)
         .eq('status', 'active');
 
-      if (memberError) {
-        throw memberError;
+      if (membershipError) throw membershipError;
+
+      // If user has memberships, get those teams
+      let teamData: Team[] = ownedTeams || [];
+      
+      if (memberships && memberships.length > 0) {
+        const teamIds = memberships.map(m => m.team_id);
+        const { data: memberTeams, error: teamsError } = await supabase
+          .from('teams')
+          .select('*')
+          .in('id', teamIds)
+          .not('owner_id', 'eq', user.id); // Exclude owned teams to avoid duplicates
+        
+        if (teamsError) throw teamsError;
+        
+        if (memberTeams) {
+          teamData = [...teamData, ...memberTeams];
+        }
       }
 
-      // Extract unique teams
-      const uniqueTeams = memberTeams?.reduce((acc: Team[], member: any) => {
-        if (member.teams && !acc.find(t => t.id === member.teams.id)) {
-          acc.push(member.teams);
-        }
-        return acc;
-      }, []) || [];
-
       // Sort by creation date
-      uniqueTeams.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      teamData.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      setTeams(uniqueTeams);
+      setTeams(teamData);
     } catch (err: any) {
       console.error('Error fetching teams:', err);
       setError(err.message);
@@ -149,6 +162,7 @@ export const useTeams = () => {
     if (!user) return null;
 
     try {
+      // First create the team
       const { data, error } = await supabase
         .from('teams')
         .insert([{ ...teamData, owner_id: user.id }])
@@ -157,7 +171,7 @@ export const useTeams = () => {
 
       if (error) throw error;
 
-      // Add creator as owner
+      // Then add creator as owner
       const { error: memberError } = await supabase
         .from('team_members')
         .insert([{
@@ -172,6 +186,7 @@ export const useTeams = () => {
         // Don't throw here as team was created successfully
       }
 
+      // Refresh the teams list
       await fetchTeams();
       return data;
     } catch (err: any) {
@@ -223,24 +238,41 @@ export const useTeams = () => {
     if (!user) return [];
 
     try {
-      const { data, error } = await supabase
+      // First get team members
+      const { data: members, error: membersError } = await supabase
         .from('team_members')
-        .select(`
-          *,
-          users!inner(email, raw_user_meta_data)
-        `)
+        .select('*')
         .eq('team_id', teamId)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (membersError) throw membersError;
 
-      return (data || []).map(member => ({
-        ...member,
-        user: member.users ? {
-          email: member.users.email,
-          full_name: member.users.raw_user_meta_data?.full_name
-        } : undefined
-      }));
+      if (!members || members.length === 0) {
+        return [];
+      }
+
+      // Then get user details for those members
+      const userIds = members.map(m => m.user_id);
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('id, email, raw_user_meta_data')
+        .in('id', userIds);
+
+      if (usersError) throw usersError;
+
+      // Combine the data
+      const enrichedMembers = members.map(member => {
+        const userData = users?.find(u => u.id === member.user_id);
+        return {
+          ...member,
+          user: userData ? {
+            email: userData.email,
+            full_name: userData.raw_user_meta_data?.full_name
+          } : undefined
+        };
+      });
+
+      return enrichedMembers;
     } catch (err: any) {
       console.error('Error fetching team members:', err);
       return [];
@@ -264,8 +296,6 @@ export const useTeams = () => {
         .single();
 
       if (error) throw error;
-
-      // TODO: Send invitation email
       
       return data;
     } catch (err: any) {
