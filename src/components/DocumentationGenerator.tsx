@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { ApiEndpoint } from '../hooks/useApis';
-import { Book, Code, Download, ExternalLink, Copy, Check, Sparkles, FileText, Globe, Settings, RefreshCw, X } from 'lucide-react';
+import { Book, Code, Download, ExternalLink, Copy, Check, Sparkles, FileText, Globe, Settings, RefreshCw, X, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getDirectApiUrl } from '../lib/directApi';
 
 interface DocumentationGeneratorProps {
   apis: ApiEndpoint[];
@@ -42,6 +43,8 @@ export const DocumentationGenerator: React.FC<DocumentationGeneratorProps> = ({
     setGenerating(true);
     
     try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      
       const prompt = `Generate a comprehensive OpenAPI 3.0 specification for the following APIs:
 
 Project: ${projectName}
@@ -53,16 +56,18 @@ ${apis.map(api => `
   Public: ${api.is_public ? 'Yes' : 'No (requires API key)'}
   Data Type: ${api.data_type}
   Sample Response: ${JSON.stringify(api.json_data, null, 2)}
+  URL: ${api.is_public ? getDirectApiUrl(api.route, api.data_type as 'template' | 'schema') : `${supabaseUrl}/functions/v1/api-proxy${api.route}`}
 `).join('\n')}
 
 Requirements:
 1. Create a complete OpenAPI 3.0 specification
 2. Include proper schemas for all response types
-3. Add security schemes for private APIs (API key authentication)
-4. Include detailed descriptions and examples
-5. Add proper error responses (400, 401, 404, 500)
-6. Use realistic and comprehensive examples
-7. Include proper data types and validation rules
+3. For public APIs, use the direct REST URL format: ${supabaseUrl}/rest/v1/public_api_endpoints?route=eq.ROUTE&select=response_data
+4. For private APIs, add security schemes for API key authentication via x-api-key header
+5. Include detailed descriptions and examples
+6. Add proper error responses (400, 401, 404, 500)
+7. Use realistic and comprehensive examples
+8. Include proper data types and validation rules
 
 Format the response as a valid JSON object that can be used with Swagger UI.`;
 
@@ -136,8 +141,12 @@ Format the response as a valid JSON object that can be used with Swagger UI.`;
       },
       servers: [
         {
+          url: `${supabaseUrl}/rest/v1`,
+          description: "Direct REST API (public endpoints)"
+        },
+        {
           url: `${supabaseUrl}/functions/v1/api-proxy`,
-          description: "Production server"
+          description: "Edge Function API (all endpoints)"
         }
       ],
       paths: {},
@@ -148,6 +157,11 @@ Format the response as a valid JSON object that can be used with Swagger UI.`;
             type: "apiKey",
             in: "header",
             name: "x-api-key"
+          },
+          SupabaseKeyAuth: {
+            type: "apiKey",
+            in: "query",
+            name: "apikey"
           }
         }
       }
@@ -156,6 +170,47 @@ Format the response as a valid JSON object that can be used with Swagger UI.`;
     apis.forEach(api => {
       const pathKey = api.route;
       
+      if (api.is_public) {
+        // Direct REST API for public endpoints
+        const restPath = `/public_api_${api.data_type === 'schema' ? 'data' : 'endpoints'}?route=eq.${pathKey.replace(/^\//, '')}&select=response_data`;
+        
+        spec.paths[restPath] = {
+          get: {
+            summary: `${api.name} (Direct REST)`,
+            description: api.description || `Direct REST access to ${api.name}`,
+            security: [{ SupabaseKeyAuth: [] }],
+            responses: {
+              "200": {
+                description: "Successful response",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          response_data: {
+                            type: "object",
+                            example: api.json_data
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "404": {
+                description: "API endpoint not found"
+              },
+              "500": {
+                description: "Internal server error"
+              }
+            }
+          }
+        };
+      }
+      
+      // Edge Function path (works for all endpoints)
       spec.paths[pathKey] = {
         get: {
           summary: api.name,
@@ -197,6 +252,8 @@ Format the response as a valid JSON object that can be used with Swagger UI.`;
     setGenerating(true);
     
     try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      
       const prompt = `Generate comprehensive Markdown documentation for the following API project:
 
 Project: ${projectName}
@@ -207,6 +264,8 @@ ${apis.map(api => `
   Description: ${api.description || 'No description'}
   Public: ${api.is_public ? 'Yes' : 'No (requires API key)'}
   Data Type: ${api.data_type}
+  Direct REST URL: ${api.is_public ? getDirectApiUrl(api.route, api.data_type as 'template' | 'schema') : 'N/A (private endpoint)'}
+  Edge Function URL: ${`${supabaseUrl}/functions/v1/api-proxy${api.route}`}
   Sample Response: ${JSON.stringify(api.json_data, null, 2)}
 `).join('\n')}
 
@@ -217,13 +276,17 @@ Requirements:
 4. Document each endpoint with:
    - Description
    - HTTP method and URL
+   - Direct REST API URL for public endpoints (emphasize this as the FAST option)
+   - Edge Function URL as fallback for private endpoints
    - Authentication requirements
-   - Request parameters (if any)
    - Response format with examples
    - Error codes and messages
 5. Include code examples in multiple languages (curl, JavaScript, Python)
+   - For public endpoints, show the fast direct API usage
+   - For private endpoints, show the edge function approach
 6. Add rate limiting and best practices sections
 7. Include troubleshooting and FAQ sections
+8. Emphasize the performance benefits of using Direct REST API (~50-100ms) vs Edge Functions (~1-5s)
 
 Format as clean, well-structured Markdown that's ready for GitHub or documentation sites.`;
 
@@ -285,46 +348,77 @@ Format as clean, well-structured Markdown that's ready for GitHub or documentati
 
 This is the API documentation for ${projectName}. The API provides ${apis.length} endpoint${apis.length !== 1 ? 's' : ''} for accessing data.
 
-**Base URL:** \`${supabaseUrl}/functions/v1/api-proxy\`
+## Access Methods
 
-## Authentication
+For optimal performance, we provide two ways to access the API:
 
-${apis.some(api => !api.is_public) ? `Some endpoints require authentication. Include your API key in the request header:
+1. **Direct REST API** (Public endpoints only)
+   - **Response time:** ~50-100ms
+   - **URL format:** \`${supabaseUrl}/rest/v1/public_api_endpoints?route=eq.{route}&select=response_data\`
+   - No authentication headers required for public endpoints
 
-\`\`\`
-x-api-key: YOUR_API_KEY
-\`\`\`
-` : 'All endpoints are publicly accessible.'}
+2. **Edge Function API** (All endpoints)
+   - **Response time:** ~1-5s
+   - **URL format:** \`${supabaseUrl}/functions/v1/api-proxy{route}\`
+   - Requires API key for private endpoints
+
+**💡 Performance Tip:** Always use the Direct REST API for public endpoints when possible!
 
 ## Endpoints
 
 ${apis.map(api => `
 ### ${api.name}
 
-**Endpoint:** \`GET ${api.route}\`
+**Route:** \`${api.route}\`
 
 **Description:** ${api.description || 'No description provided'}
 
-**Authentication:** ${api.is_public ? 'None required' : 'API key required'}
+**Access Type:** ${api.is_public ? '✅ Public' : '🔒 Private (API key required)'}
+
+**Data Type:** ${api.data_type === 'schema' ? 'Schema-based (dynamic data)' : 'Template-based'}
+
+${api.is_public ? `**⚡ Fast Direct REST URL:**
+\`\`\`
+${getDirectApiUrl(api.route, api.data_type as 'template' | 'schema')}
+\`\`\`` : ''}
+
+**Edge Function URL:**
+\`\`\`
+${supabaseUrl}/functions/v1/api-proxy${api.route}
+\`\`\`
 
 **Response Example:**
 \`\`\`json
 ${JSON.stringify(api.json_data, null, 2)}
 \`\`\`
 
-**cURL Example:**
+**Example Usage:**
+
+*cURL:*
 \`\`\`bash
-curl -X GET "${supabaseUrl}/functions/v1/api-proxy${api.route}"${!api.is_public ? ' \\\n  -H "x-api-key: YOUR_API_KEY"' : ''}
+${api.is_public ?
+  `# Fast Direct REST API (50-100ms)
+curl -X GET "${getDirectApiUrl(api.route, api.data_type as 'template' | 'schema')}"` :
+  `# Edge Function API
+curl -X GET "${supabaseUrl}/functions/v1/api-proxy${api.route}" \\
+  -H "x-api-key: YOUR_API_KEY"`
+}
 \`\`\`
 
-**JavaScript Example:**
+*JavaScript:*
 \`\`\`javascript
+${api.is_public ?
+  `// Fast Direct REST API (50-100ms)
+const response = await fetch('${getDirectApiUrl(api.route, api.data_type as 'template' | 'schema')}');
+const result = await response.json();
+const data = result.response_data; // Note: result is an array with a single object containing response_data` :
+  `// Edge Function API
 const response = await fetch('${supabaseUrl}/functions/v1/api-proxy${api.route}', {
-${!api.is_public ? `  headers: {
+  headers: {
     'x-api-key': 'YOUR_API_KEY'
-  }` : '  // No headers needed for public endpoint'}
+  }
 });
-const data = await response.json();
+const data = await response.json();`}
 console.log(data);
 \`\`\`
 `).join('\n')}
@@ -338,9 +432,10 @@ console.log(data);
 | 404  | Endpoint not found |
 | 500  | Internal server error |
 
-## Rate Limiting
+## Performance Considerations
 
-Please be respectful with your API usage. If you need higher rate limits, please contact us.
+- **Direct REST API** (50-100ms): Always use for public endpoints
+- **Edge Function API** (1-5s): Use for private endpoints requiring authentication
 
 ## Support
 
@@ -455,14 +550,16 @@ For support and questions, please contact the API team.
           {/* Interactive Documentation */}
           {activeTab === 'interactive' && (
             <div className="space-y-6">
-              <div className="text-center py-8">
-                <Book className="w-16 h-16 mx-auto mb-4 text-blue-600 dark:text-blue-400" />
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                  Interactive API Documentation
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-6">
-                  Test your APIs directly from the documentation interface
-                </p>
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800 mb-6">
+                <div className="flex items-start space-x-3">
+                  <Zap className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-1" />
+                  <div>
+                    <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1">Performance Tip: Direct REST API</h4>
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      Public endpoints can be accessed directly via Supabase REST API for significantly faster response times (~50-100ms vs 1-5s for edge functions).
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-6">
@@ -482,11 +579,18 @@ For support and questions, please contact the API team.
                               Private
                             </span>
                           )}
+                          {api.is_public && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full text-xs flex items-center space-x-1">
+                              <Zap className="w-3 h-3" />
+                              <span>Fast API</span>
+                            </span>
+                          )}
                         </div>
                         <button
                           onClick={() => {
-                            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-                            const url = `${supabaseUrl}/functions/v1/api-proxy${api.route}`;
+                            const url = api.is_public 
+                              ? getDirectApiUrl(api.route, api.data_type as 'template' | 'schema')
+                              : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-proxy${api.route}`;
                             window.open(url, '_blank');
                           }}
                           className="flex items-center space-x-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
@@ -507,11 +611,32 @@ For support and questions, please contact the API team.
                         </p>
                       </div>
 
+                      {api.is_public && (
+                        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            <h5 className="text-sm font-medium text-blue-900 dark:text-blue-100">Direct REST API URL (Fast ~50-100ms):</h5>
+                          </div>
+                          <code className="bg-white dark:bg-gray-800 p-2 rounded text-xs font-mono text-blue-800 dark:text-blue-300 block overflow-x-auto">
+                            {getDirectApiUrl(api.route, api.data_type as 'template' | 'schema')}
+                          </code>
+                        </div>
+                      )}
+
+                      <div>
+                        <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                          {api.is_public ? "Edge Function URL (Alternative):" : "API URL:"}
+                        </h5>
+                        <code className="bg-gray-100 dark:bg-gray-800 p-2 rounded text-xs font-mono block overflow-x-auto text-gray-800 dark:text-gray-300">
+                          {`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-proxy${api.route}`}
+                        </code>
+                      </div>
+
                       <div>
                         <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
                           Response Example:
                         </h5>
-                        <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                        <div className="bg-gray-900 dark:bg-black rounded-lg p-4 overflow-x-auto">
                           <pre className="text-green-400 text-sm">
                             {JSON.stringify(api.json_data, null, 2)}
                           </pre>
@@ -519,30 +644,59 @@ For support and questions, please contact the API team.
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
-                            cURL Example:
-                          </h5>
-                          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
-                            <code className="text-sm text-gray-800 dark:text-gray-200">
-                              curl -X GET "{import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-proxy{api.route}"
-                              {!api.is_public && ' \\\n  -H "x-api-key: YOUR_API_KEY"'}
-                            </code>
-                          </div>
-                        </div>
-
-                        <div>
-                          <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
-                            JavaScript Example:
-                          </h5>
-                          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
-                            <code className="text-sm text-gray-800 dark:text-gray-200">
-                              {`fetch('${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-proxy${api.route}'${!api.is_public ? `, {
+                        {api.is_public ? (
+                          <>
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                                Direct REST API (Fast):
+                              </h5>
+                              <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                                <code className="text-sm text-gray-800 dark:text-gray-200">
+                                  curl -X GET "{getDirectApiUrl(api.route, api.data_type as 'template' | 'schema')}"
+                                </code>
+                              </div>
+                            </div>
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                                JavaScript Example (Fast):
+                              </h5>
+                              <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                                <code className="text-sm text-gray-800 dark:text-gray-200">
+                                  {`// ~50-100ms response time
+fetch('${getDirectApiUrl(api.route, api.data_type as 'template' | 'schema')}')
+  .then(res => res.json())
+  .then(data => console.log(data.response_data))`}
+                                </code>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                                cURL Example:
+                              </h5>
+                              <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                                <code className="text-sm text-gray-800 dark:text-gray-200">
+                                  curl -X GET "{import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-proxy{api.route}"
+                                  {!api.is_public && ' \\\n  -H "x-api-key: YOUR_API_KEY"'}
+                                </code>
+                              </div>
+                            </div>
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                                JavaScript Example:
+                              </h5>
+                              <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
+                                <code className="text-sm text-gray-800 dark:text-gray-200">
+                                  {`fetch('${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-proxy${api.route}'${!api.is_public ? `, {
   headers: { 'x-api-key': 'YOUR_API_KEY' }
 }` : ''})`}
-                            </code>
-                          </div>
-                        </div>
+                                </code>
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -621,7 +775,7 @@ For support and questions, please contact the API team.
                 </div>
               ) : (
                 <div className="text-center py-16 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                  <Settings className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                  <Settings className="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                     Generate OpenAPI Specification
                   </h3>
@@ -708,7 +862,7 @@ For support and questions, please contact the API team.
                 </div>
               ) : (
                 <div className="text-center py-16 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                  <FileText className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                  <FileText className="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                     Generate Markdown Documentation
                   </h3>

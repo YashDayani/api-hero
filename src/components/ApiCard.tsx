@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ApiEndpoint } from '../hooks/useApis';
-import { Edit2, Trash2, Play, Copy, Check, Globe, ExternalLink, Lock, Unlock, Key, RefreshCw, Database, Code, AlertTriangle, FileText } from 'lucide-react';
+import { Edit2, Trash2, Play, Copy, Check, Globe, ExternalLink, Lock, Unlock, Key, RefreshCw, Database, Code, AlertTriangle, FileText, Zap } from 'lucide-react';
+import { getDirectApiUrl } from '../lib/directApi';
 
 interface ApiCardProps {
   api: ApiEndpoint;
@@ -23,13 +24,19 @@ export const ApiCard: React.FC<ApiCardProps> = ({
   const [copiedKey, setCopiedKey] = useState(false);
 
   const getApiUrl = () => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    // Ensure the route starts with /
-    let route = api.route;
-    if (!route.startsWith('/')) {
-      route = '/' + route;
+    if (api.is_public) {
+      // For public endpoints, return the direct Supabase REST API URL
+      return getDirectApiUrl(api.route, api.data_type as 'template' | 'schema');
+    } else {
+      // For private endpoints, use the edge function
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      // Ensure the route starts with /
+      let route = api.route;
+      if (!route.startsWith('/')) {
+        route = '/' + route;
+      }
+      return `${supabaseUrl}/functions/v1/api-proxy${route}`;
     }
-    return `${supabaseUrl}/functions/v1/api-proxy${route}`;
   };
 
   const handleCopyUrl = async () => {
@@ -106,9 +113,9 @@ export const ApiCard: React.FC<ApiCardProps> = ({
           <div className="flex-1">
             <div className="flex items-center space-x-3 mb-2">
               {api.is_public ? (
-                <Globe className="w-5 h-5 text-green-600" />
+                <Globe className="w-5 h-5 text-green-600 dark:text-green-400" />
               ) : (
-                <Lock className="w-5 h-5 text-orange-600" />
+                <Lock className="w-5 h-5 text-orange-600 dark:text-orange-400" />
               )}
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{api.name}</h3>
               <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
@@ -117,6 +124,12 @@ export const ApiCard: React.FC<ApiCardProps> = ({
               {!api.is_public && (
                 <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
                   Private
+                </span>
+              )}
+              {api.is_public && (
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex items-center space-x-1">
+                  <Zap className="w-3 h-3" />
+                  <span>Fast</span>
                 </span>
               )}
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${dataTypeInfo.bgColor} ${dataTypeInfo.color} dark:bg-opacity-20`}>
@@ -153,6 +166,15 @@ export const ApiCard: React.FC<ApiCardProps> = ({
             <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
               <strong>API URL:</strong> {getApiUrl()}
             </div>
+
+            {api.is_public && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-2 mb-2">
+                <span className="text-xs text-blue-800 dark:text-blue-200 flex items-center">
+                  <Zap className="w-3 h-3 mr-1" />
+                  Direct REST API: ~50-100ms response time
+                </span>
+              </div>
+            )}
 
             {!api.is_public && api.api_key && (
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-2 mb-2">

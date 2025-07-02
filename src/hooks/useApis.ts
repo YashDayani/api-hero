@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
+import { directApi } from '../lib/directApi';
 
 export interface ApiEndpoint {
   id: string;
@@ -54,6 +55,19 @@ export const useApis = () => {
       } else {
         setApis(data || []);
         setError(null);
+        
+        // Prefetch public endpoints using directApi
+        if (data && data.length > 0) {
+          const publicRoutes = data
+            .filter(api => api.is_public)
+            .map(api => api.route);
+          
+          if (publicRoutes.length > 0) {
+            // Don't await this - let it happen in the background
+            directApi.prefetchEndpoints(publicRoutes)
+              .catch(err => console.warn('Background prefetch error:', err));
+          }
+        }
       }
     } catch (error) {
       console.error('Network error fetching APIs:', error);
@@ -142,6 +156,11 @@ export const useApis = () => {
         return null;
       }
       
+      // Clear directApi cache for this route if it exists
+      if (data.is_public) {
+        directApi.clearCache(data.route);
+      }
+      
       setApis(prev => [data, ...prev]);
       return data;
     } catch (error) {
@@ -193,6 +212,13 @@ export const useApis = () => {
         return false;
       }
 
+      // Clear directApi cache for this route to ensure it gets refreshed
+      directApi.clearCache(data.route);
+      if (currentApi && currentApi.route !== data.route) {
+        // If route changed, also clear the old route from cache
+        directApi.clearCache(currentApi.route);
+      }
+      
       setApis(prev => prev.map(a => a.id === id ? data : a));
       return true;
     } catch (error) {
@@ -232,6 +258,9 @@ export const useApis = () => {
     if (!user) return false;
 
     try {
+      // Get the API first to know its route
+      const apiToDelete = apis.find(api => api.id === id);
+      
       const { error } = await supabase
         .from('api_endpoints')
         .delete()
@@ -243,6 +272,11 @@ export const useApis = () => {
         return false;
       }
 
+      // Clear from directApi cache if it was a public endpoint
+      if (apiToDelete?.is_public) {
+        directApi.clearCache(apiToDelete.route);
+      }
+      
       setApis(prev => prev.filter(a => a.id !== id));
       return true;
     } catch (error) {
@@ -256,6 +290,17 @@ export const useApis = () => {
   };
 
   const getApiByRoute = async (route: string) => {
+    // Try directApi first for public endpoints (much faster)
+    try {
+      const directResult = await directApi.getPublicEndpoint(route);
+      if (directResult) {
+        return directResult;
+      }
+    } catch (err) {
+      console.warn('Direct API lookup failed, falling back to database:', err);
+    }
+    
+    // Fall back to database query for private endpoints
     try {
       const { data, error } = await supabase
         .from('api_endpoints')
