@@ -350,7 +350,8 @@ Deno.serve(async (req) => {
       setTimeout(() => reject(new Error('Database query timeout')), 10000)
     )
     
-    const queryPromise = supabaseClient
+    // IMPROVED LOGIC: First check if the route exists at all (regardless of access level)
+    const routeCheckPromise = supabaseClient
       .from('api_endpoints')
       .select(`
         id,
@@ -368,50 +369,19 @@ Deno.serve(async (req) => {
         json_templates!template_id(id, json_data, updated_at)
       `)
       .eq('route', route)
-      .eq('is_public', true)
       .limit(1)
 
-    let { data: endpoints, error: queryError } = await Promise.race([queryPromise, queryTimeout])
+    let { data: allEndpoints, error: queryError } = await Promise.race([routeCheckPromise, queryTimeout])
 
     if (queryError) {
       console.error('Database query error:', queryError)
       throw queryError
     }
 
-    // If no public endpoint found, check for private endpoints
-    if (!endpoints || endpoints.length === 0) {
-      if (apiKeyHeader) {
-        const privateQueryPromise = supabaseClient
-          .from('api_endpoints')
-          .select(`
-            id,
-            name,
-            route,
-            json_data,
-            is_public,
-            api_key,
-            data_type,
-            schema_id,
-            template_id,
-            updated_at,
-            user_id,
-            project_id,
-            json_templates!template_id(id, json_data, updated_at)
-          `)
-          .eq('route', route)
-          .eq('is_public', false)
-          .eq('api_key', apiKeyHeader)
-          .limit(1)
-
-        const { data: privateEndpoints, error: privateError } = await Promise.race([privateQueryPromise, queryTimeout])
-        if (privateError) throw privateError
-        endpoints = privateEndpoints
-      }
-    }
-
     const responseTime = Date.now() - startTime
 
-    if (!endpoints || endpoints.length === 0) {
+    // If route doesn't exist at all, return 404
+    if (!allEndpoints || allEndpoints.length === 0) {
       const errorResponse = {
         error: 'API endpoint not found',
         route: route,
@@ -434,11 +404,12 @@ Deno.serve(async (req) => {
       )
     }
 
-    const endpoint = endpoints[0]
+    const endpoint = allEndpoints[0]
     console.log(`Found endpoint for route ${route}:`, { id: endpoint.id, name: endpoint.name, is_public: endpoint.is_public })
 
-    // Access control checks
+    // IMPROVED ACCESS CONTROL: Now we know the route exists, handle authentication properly
     if (!endpoint.is_public) {
+      // This is a private endpoint
       if (!apiKeyHeader) {
         const errorResponse = {
           error: 'Missing API key',
@@ -468,7 +439,8 @@ Deno.serve(async (req) => {
         const errorResponse = {
           error: 'Invalid API key',
           message: 'The provided API key is not valid for this endpoint.',
-          route: route
+          route: route,
+          hint: 'Please check your API key and ensure it matches the one configured for this endpoint.'
         }
 
         // Log analytics for invalid API key
