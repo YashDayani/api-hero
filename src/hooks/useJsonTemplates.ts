@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
-import { directApi } from '../lib/directApi';
 
 export interface JsonTemplate {
   id: string;
@@ -79,10 +78,6 @@ export const useJsonTemplates = () => {
       if (error) throw error;
       
       setTemplates(prev => [data, ...prev]);
-      
-      // Clear directApi cache for any APIs using this template
-      directApi.clearCache();
-      
       return data;
     } catch (error) {
       console.error('Error adding JSON template:', error);
@@ -105,10 +100,6 @@ export const useJsonTemplates = () => {
       if (error) throw error;
 
       setTemplates(prev => prev.map(t => t.id === id ? data : t));
-      
-      // Clear directApi cache for any APIs using this template
-      directApi.clearCache();
-      
       return true;
     } catch (error) {
       console.error('Error updating JSON template:', error);
@@ -129,10 +120,6 @@ export const useJsonTemplates = () => {
       if (error) throw error;
 
       setTemplates(prev => prev.filter(t => t.id !== id));
-      
-      // Clear directApi cache for any APIs using this template
-      directApi.clearCache();
-      
       return true;
     } catch (error) {
       console.error('Error deleting JSON template:', error);

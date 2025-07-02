@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
-import { directApi } from '../lib/directApi';
 
 export interface SchemaField {
   id: string;
@@ -101,10 +100,6 @@ export const useSchemas = () => {
       if (error) throw error;
 
       setSchemas(prev => prev.map(s => s.id === id ? data : s));
-      
-      // Clear directApi cache for related schema data
-      directApi.clearCache();
-      
       return true;
     } catch (error) {
       console.error('Error updating schema:', error);
@@ -125,10 +120,6 @@ export const useSchemas = () => {
       if (error) throw error;
 
       setSchemas(prev => prev.filter(s => s.id !== id));
-      
-      // Clear directApi cache for related schema data
-      directApi.clearCache();
-      
       return true;
     } catch (error) {
       console.error('Error deleting schema:', error);
@@ -161,9 +152,6 @@ export const useSchemas = () => {
         throw error;
       }
       
-      // Clear directApi cache for this schema's endpoints
-      directApi.clearCache();
-      
       console.log('Successfully added data entry:', entry);
       return entry;
     } catch (error) {
@@ -192,9 +180,6 @@ export const useSchemas = () => {
         throw error;
       }
       
-      // Clear directApi cache for this schema's endpoints
-      directApi.clearCache();
-      
       console.log('Successfully updated data entry');
       return true;
     } catch (error) {
@@ -222,9 +207,6 @@ export const useSchemas = () => {
         console.error('Supabase error deleting data entry:', error);
         throw error;
       }
-      
-      // Clear directApi cache for this schema's endpoints
-      directApi.clearCache();
       
       console.log('Successfully deleted data entry');
       return true;
