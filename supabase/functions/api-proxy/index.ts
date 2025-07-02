@@ -1,5 +1,4 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from "npm:@supabase/supabase-js@2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -235,23 +234,32 @@ async function logAnalytics(supabaseClient: any, endpoint: any, request: Request
       error_type: error ? (responseStatus >= 500 ? 'server_error' : 'client_error') : null
     }
 
+    console.log('Logging analytics data:', analyticsData)
+
     // Insert analytics data (fire and forget)
-    supabaseClient
+    const { data, error: insertError } = await supabaseClient
       .from('api_analytics')
       .insert([analyticsData])
-      .then(() => {
-        console.log('Analytics logged successfully')
+    
+    if (insertError) {
+      console.error('Failed to log analytics:', insertError)
+      // More detailed error logging
+      console.error('Analytics insert error details:', {
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint
       })
-      .catch((err: any) => {
-        console.error('Failed to log analytics:', err.message)
-      })
+    } else {
+      console.log('Analytics logged successfully:', data)
+    }
 
   } catch (error) {
     console.error('Analytics logging error:', error)
   }
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight requests immediately
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -410,6 +418,8 @@ serve(async (req) => {
         message: `No API endpoint configured for route: ${route}`
       }
       
+      console.log(`API endpoint not found for route: ${route}`)
+      
       return new Response(
         JSON.stringify(errorResponse),
         {
@@ -425,6 +435,7 @@ serve(async (req) => {
     }
 
     const endpoint = endpoints[0]
+    console.log(`Found endpoint for route ${route}:`, { id: endpoint.id, name: endpoint.name, is_public: endpoint.is_public })
 
     // Access control checks
     if (!endpoint.is_public) {
@@ -436,6 +447,7 @@ serve(async (req) => {
         }
 
         // Log analytics for unauthorized access
+        console.log('Unauthorized access attempt - missing API key')
         await logAnalytics(supabaseClient, endpoint, req, 401, responseTime, JSON.stringify(errorResponse).length, 'Missing API key')
         
         return new Response(
@@ -460,6 +472,7 @@ serve(async (req) => {
         }
 
         // Log analytics for invalid API key
+        console.log('Unauthorized access attempt - invalid API key')
         await logAnalytics(supabaseClient, endpoint, req, 401, responseTime, JSON.stringify(errorResponse).length, 'Invalid API key')
         
         return new Response(
@@ -542,6 +555,7 @@ serve(async (req) => {
     const responseString = JSON.stringify(responseData)
     
     // Log successful analytics
+    console.log('Logging successful API call analytics')
     await logAnalytics(supabaseClient, endpoint, req, 200, finalResponseTime, responseString.length)
     
     console.log(`API Proxy: Fresh data served for route: ${route} in ${finalResponseTime}ms`)
